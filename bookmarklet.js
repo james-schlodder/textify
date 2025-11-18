@@ -342,7 +342,8 @@
       '.related', '[class*="related"]',
       '.comments', '[class*="comment"]',
       '[class*="sidebar"]', '[id*="sidebar"]',
-      '[class*="promo"]', '[class*="sponsored"]'
+      '[class*="promo"]', '[class*="sponsored"]',
+      '[class*="recommended"]', '[class*="more-from"]'
     ];
     
     unwantedSelectors.forEach(selector => {
@@ -357,17 +358,56 @@
     // Get paragraphs
     const paragraphs = clone.querySelectorAll('p');
     const texts = [];
+    let consecutiveShortParagraphs = 0;
     
     for (const p of paragraphs) {
       const text = p.textContent.trim();
       
       // Filter out metadata and short text
-      if (text.length > 30 && !isMetadata(text)) {
-        texts.push(text);
+      if (text.length < 30 || isMetadata(text)) {
+        continue;
       }
+      
+      // Check for end-of-article indicators
+      if (isEndOfArticle(text)) {
+        break;
+      }
+      
+      // Stop if we hit multiple short paragraphs (likely headlines/promos)
+      if (text.length < 100) {
+        consecutiveShortParagraphs++;
+        if (consecutiveShortParagraphs >= 3) {
+          break;
+        }
+      } else {
+        consecutiveShortParagraphs = 0;
+      }
+      
+      texts.push(text);
     }
     
     return texts.join('\n\n');
+  }
+  
+  // Check if text indicates end of article content
+  function isEndOfArticle(text) {
+    const endPatterns = [
+      // WSJ-specific end markers
+      /Buy Side is independent/i,
+      /Best .+ of \d{4}/i,  // "Best Christmas Trees of 2024"
+      /\d+ of the Best/i,    // "6 of the Best Financial..."
+      
+      // Generic promotional content
+      /^(More|Related|Recommended|Popular|Trending):/i,
+      /Click here to/i,
+      /Subscribe (now|today) for/i,
+      
+      // Newsletter/subscription prompts
+      /Sign up for our newsletter/i,
+      /Get our .+ newsletter/i
+    ];
+    
+    return endPatterns.some(pattern => pattern.test(text));
   }
   
   // Check if text is metadata/navigation
