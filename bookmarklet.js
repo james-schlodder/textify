@@ -404,8 +404,8 @@
     for (const p of paragraphs) {
       const text = p.textContent.trim();
       
-      // Filter out metadata and short text
-      if (text.length < 30 || isMetadata(text)) {
+      // Filter out metadata and very short text
+      if (text.length < 20 || isMetadata(text)) {
         continue;
       }
       
@@ -415,9 +415,10 @@
       }
       
       // Stop if we hit multiple short paragraphs (likely headlines/promos)
-      if (text.length < 100) {
+      // But allow quoted dialogue and short narrative paragraphs
+      if (text.length < 80) {
         consecutiveShortParagraphs++;
-        if (consecutiveShortParagraphs >= 3) {
+        if (consecutiveShortParagraphs >= 5) {
           break;
         }
       } else {
