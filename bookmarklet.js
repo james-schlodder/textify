@@ -385,7 +385,8 @@
       /^\d+\s*(comments?|shares?|views?|likes?)$/i,
       
       // Navigation
-      /^(Continue reading|Related|Tags?|Topics?|Categories|See more on):/i,
+      /^(Continue reading|Related|Tags?|Topics?|Categories|See more on|View more):/i,
+      /^View more$/i,
       
       // Advertisements
       /^(Advertisement|Supported by|Skip|Ad|Promoted)/i,
@@ -397,7 +398,13 @@
       /is (a|an) .+ (correspondent|reporter|writer|editor|journalist)/i,
       
       // Footer content
-      /^(Share full article|Related Content|More on)/i
+      /^(Share full article|Related Content|More on)/i,
+      
+      // WSJ-specific patterns
+      /artificial.intelligence tool created this summary/i,
+      /^Write to .+ at .+@/i,  // Author contact info
+      /^Copyright ©\d{4}/i,     // Copyright notices
+      /^\d{32}$/                // WSJ tracking codes (32-digit hex strings)
     ];
     
     return metadataPatterns.some(pattern => pattern.test(text));
