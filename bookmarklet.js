@@ -193,6 +193,11 @@
   
   // Method 2: Site-specific selectors for major news sites
   function trySiteSpecificSelectors() {
+    // WSJ-specific extraction with "Write to" boundary detection
+    if (window.location.hostname.includes('wsj.com')) {
+      return tryWSJExtraction();
+    }
+    
     const siteSelectors = [
       // New York Times
       'section[name="articleBody"]',
@@ -216,7 +221,7 @@
       // Bloomberg
       '.body-content',
       
-      // Wall Street Journal
+      // Wall Street Journal (fallback)
       '.article-content',
       
       // Generic WordPress/CMS
@@ -234,6 +239,39 @@
           return { text: text };
         }
       }
+    }
+    
+    return { text: '' };
+  }
+  
+  // WSJ-specific extraction function
+  function tryWSJExtraction() {
+    const articleParagraphs = document.querySelectorAll('p[data-type="paragraph"]');
+    const texts = [];
+    
+    for (const p of articleParagraphs) {
+      const text = p.textContent.trim();
+      
+      // Stop at "Write to" paragraph (author contact info)
+      if (text.startsWith('Write to ')) {
+        break;
+      }
+      
+      // Skip very short paragraphs
+      if (text.length < 30) {
+        continue;
+      }
+      
+      // Skip metadata
+      if (isMetadata(text)) {
+        continue;
+      }
+      
+      texts.push(text);
+    }
+    
+    if (texts.length > 0) {
+      return { text: texts.join('\n\n') };
     }
     
     return { text: '' };
@@ -368,7 +406,7 @@
         continue;
       }
       
-      // Check for end-of-article indicators
+      // Check for end-of-article indicators (including "Write to")
       if (isEndOfArticle(text)) {
         break;
       }
@@ -393,9 +431,10 @@
   function isEndOfArticle(text) {
     const endPatterns = [
       // WSJ-specific end markers
+      /^Write to .+ at .+@/i,       // Author contact info - PRIMARY WSJ INDICATOR
       /Buy Side is independent/i,
-      /Best .+ of \d{4}/i,  // "Best Christmas Trees of 2024"
-      /\d+ of the Best/i,    // "6 of the Best Financial..."
+      /Best .+ of \d{4}/i,           // "Best Christmas Trees of 2024"
+      /\d+ of the Best/i,            // "6 of the Best Financial..."
       
       // Generic promotional content
       /^(More|Related|Recommended|Popular|Trending):/i,
