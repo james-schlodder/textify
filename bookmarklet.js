@@ -201,6 +201,14 @@
       }
     }
     
+    // NYT-specific extraction
+    if (window.location.hostname.includes('nytimes.com')) {
+      const nytResult = tryNYTExtraction();
+      if (nytResult.text && nytResult.text.length > 200) {
+        return nytResult;
+      }
+    }
+    
     const siteSelectors = [
       // New York Times
       'section[name="articleBody"]',
@@ -268,6 +276,40 @@
       // Skip metadata
       if (isMetadata(text)) {
         continue;
+      }
+      
+      texts.push(text);
+    }
+    
+    if (texts.length > 0) {
+      return { text: texts.join('\n\n') };
+    }
+    
+    return { text: '' };
+  }
+  
+  // NYT-specific extraction function
+  function tryNYTExtraction() {
+    // NYT uses section[name="articleBody"] for article content
+    const articleBody = document.querySelector('section[name="articleBody"]');
+    if (!articleBody) {
+      return { text: '' };
+    }
+    
+    const paragraphs = articleBody.querySelectorAll('p');
+    const texts = [];
+    
+    for (const p of paragraphs) {
+      const text = p.textContent.trim();
+      
+      // Skip very short empty paragraphs
+      if (text.length < 5) {
+        continue;
+      }
+      
+      // Stop at obvious end markers
+      if (text.match(/^(A version of this article appears|Advertisement|SKIP ADVERTISEMENT)/i)) {
+        break;
       }
       
       texts.push(text);
