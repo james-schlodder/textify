@@ -195,7 +195,10 @@
   function trySiteSpecificSelectors() {
     // WSJ-specific extraction with "Write to" boundary detection
     if (window.location.hostname.includes('wsj.com')) {
-      return tryWSJExtraction();
+      const wsjResult = tryWSJExtraction();
+      if (wsjResult.text && wsjResult.text.length > 200) {
+        return wsjResult;
+      }
     }
     
     const siteSelectors = [
