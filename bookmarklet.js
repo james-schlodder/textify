@@ -6,41 +6,8 @@
   
   // Check if popup already exists
   if (document.getElementById('current-bookmarklet-popup')) {
-    console.log('Popup already open');
     return;
   }
-  
-  // Google Analytics tracking function
-  function trackEvent(eventName, parameters = {}) {
-    try {
-      // Load Google Analytics if not already loaded
-      if (typeof gtag === 'undefined') {
-        const script = document.createElement('script');
-        script.src = 'https://www.googletagmanager.com/gtag/js?id=G-WMSPQVX00W';
-        document.head.appendChild(script);
-        
-        window.dataLayer = window.dataLayer || [];
-        window.gtag = function(){dataLayer.push(arguments);};
-        gtag('js', new Date());
-        gtag('config', 'G-WMSPQVX00W');
-      }
-      
-      // Track the event
-      gtag('event', eventName, {
-        event_category: 'Bookmarklet',
-        event_label: window.location.hostname,
-        ...parameters
-      });
-    } catch (error) {
-      console.warn('Analytics tracking failed:', error);
-    }
-  }
-  
-  // Track bookmarklet usage
-  trackEvent('bookmarklet_opened', {
-    page_url: window.location.href,
-    page_title: document.title
-  });
   
   // Create container (no dimming background)
   const container = document.createElement('div');
@@ -121,146 +88,433 @@
     }
     
     if (event.data.action === 'extractPage') {
-      // Extract page data (now async)
+      // Extract page data
       extractPageData().then(pageData => {
         // Send back to iframe
         iframe.contentWindow.postMessage({
           action: 'pageData',
           data: pageData
         }, 'https://james-schlodder.github.io');
+      }).catch(error => {
+        console.error('Error extracting page data:', error);
       });
     }
   });
 
-  // Function to extract article text from the page
+  // Main extraction function with multiple fallback methods
   async function extractPageData() {
     let articleText = '';
     let confidence = 0;
     let method = '';
     
-    try {
-      // Method 1: Try to find article content using common selectors
-      const articleSelectors = [
-        'article',
-        '[role="main"]',
-        'main',
-        '.post-content',
-        '.entry-content',
-        '.article-content',
-        '.content',
-        '.story-body',
-        '.article-body'
-      ];
-      
-      for (const selector of articleSelectors) {
-        const element = document.querySelector(selector);
-        if (element) {
-          const text = extractTextFromElement(element);
-          if (text && text.length > articleText.length) {
-            articleText = text;
-            confidence = calculateConfidence(text, element);
-            method = `Selector: ${selector}`;
-          }
-        }
-      }
-      
-      // Method 2: If no good content found, try paragraphs
-      if (!articleText || articleText.length < 200) {
-        const paragraphs = Array.from(document.querySelectorAll('p'))
-          .map(p => p.textContent.trim())
-          .filter(text => text.length > 50);
-        
-        if (paragraphs.length > 0) {
-          articleText = paragraphs.join(' ');
-          confidence = Math.min(paragraphs.length * 10, 80);
-          method = 'Paragraph extraction';
-        }
-      }
-      
-      // Method 3: Last resort - try to get any meaningful text
-      if (!articleText || articleText.length < 100) {
-        const bodyText = document.body.textContent || document.body.innerText || '';
-        if (bodyText.length > 200) {
-          articleText = bodyText;
-          confidence = 30;
-          method = 'Full body text';
-        }
-      }
-      
-    } catch (error) {
-      console.error('Error extracting article text:', error);
-      articleText = 'Error extracting text from this page.';
-      confidence = 0;
-      method = 'Error';
+    // Method 1: Try JSON-LD structured data (highest accuracy)
+    const result1 = tryJSONLD();
+    if (result1.text && result1.text.length > 200) {
+      return {
+        articleText: cleanText(result1.text),
+        confidence: 95,
+        method: 'JSON-LD structured data'
+      };
     }
     
+    // Method 2: Try site-specific selectors
+    const result2 = trySiteSpecificSelectors();
+    if (result2.text && result2.text.length > 200) {
+      return {
+        articleText: cleanText(result2.text),
+        confidence: 90,
+        method: 'Site-specific selectors'
+      };
+    }
+    
+    // Method 3: Try semantic HTML selectors
+    const result3 = trySemanticSelectors();
+    if (result3.text && result3.text.length > 200) {
+      return {
+        articleText: cleanText(result3.text),
+        confidence: 85,
+        method: 'Semantic HTML'
+      };
+    }
+    
+    // Method 4: Container-based content scoring
+    const result4 = tryContainerScoring();
+    if (result4.text && result4.text.length > 200) {
+      return {
+        articleText: cleanText(result4.text),
+        confidence: 75,
+        method: 'Container analysis'
+      };
+    }
+    
+    // Method 5: Smart paragraph extraction
+    const result5 = trySmartParagraphs();
+    if (result5.text && result5.text.length > 100) {
+      return {
+        articleText: cleanText(result5.text),
+        confidence: 60,
+        method: 'Paragraph extraction'
+      };
+    }
+    
+    // Fallback
     return {
-      articleText: cleanTextForSheets(articleText),
-      confidence: Math.min(confidence, 100),
-      method: method
+      articleText: 'Could not extract article text from this page.',
+      confidence: 0,
+      method: 'Failed'
     };
+  }
+  
+  // Method 1: Check for JSON-LD structured data
+  function tryJSONLD() {
+    try {
+      const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+      for (const script of scripts) {
+        try {
+          const data = JSON.parse(script.textContent);
+          const items = Array.isArray(data) ? data : [data];
+          
+          for (const item of items) {
+            if (item['@type'] === 'NewsArticle' || item['@type'] === 'Article') {
+              if (item.articleBody) {
+                return { text: item.articleBody };
+              }
+            }
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+    } catch (e) {
+      console.error('JSON-LD extraction error:', e);
+    }
+    return { text: '' };
+  }
+  
+  // Method 2: Site-specific selectors for major news sites
+  function trySiteSpecificSelectors() {
+    const siteSelectors = [
+      // New York Times
+      'section[name="articleBody"]',
+      '.StoryBodyCompanionColumn',
+      
+      // Washington Post
+      '.article-body',
+      
+      // CNN
+      '.article__content',
+      
+      // Reuters
+      '.article-body__content',
+      
+      // Guardian
+      '.article-body-commercial-selector',
+      
+      // BBC
+      '.article__body-content',
+      
+      // Bloomberg
+      '.body-content',
+      
+      // Wall Street Journal
+      '.article-content',
+      
+      // Generic WordPress/CMS
+      'article .entry-content',
+      'article .post-content',
+      '.article-content',
+      '.post-body'
+    ];
+    
+    for (const selector of siteSelectors) {
+      const element = document.querySelector(selector);
+      if (element) {
+        const text = extractTextFromElement(element);
+        if (text.length > 200) {
+          return { text: text };
+        }
+      }
+    }
+    
+    return { text: '' };
+  }
+  
+  // Method 3: Semantic HTML5 selectors
+  function trySemanticSelectors() {
+    const selectors = [
+      'article',
+      'main article',
+      '[role="main"]',
+      'main',
+      '#main-content',
+      '.main-content'
+    ];
+    
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (element) {
+        const text = extractTextFromElement(element);
+        if (text.length > 200) {
+          return { text: text };
+        }
+      }
+    }
+    
+    return { text: '' };
+  }
+  
+  // Method 4: Container-based scoring - find element with most article-like content
+  function tryContainerScoring() {
+    const containers = document.querySelectorAll('div, section, article, main');
+    let bestElement = null;
+    let bestScore = 0;
+    
+    for (const container of containers) {
+      // Skip obviously non-content containers
+      if (isNonContentElement(container)) continue;
+      
+      const paragraphs = container.querySelectorAll('p');
+      if (paragraphs.length < 3) continue;
+      
+      const text = extractTextFromElement(container);
+      if (text.length < 200) continue;
+      
+      const score = scoreElement(container, text);
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestElement = container;
+      }
+    }
+    
+    if (bestElement) {
+      return { text: extractTextFromElement(bestElement) };
+    }
+    
+    return { text: '' };
+  }
+  
+  // Method 5: Smart paragraph extraction
+  function trySmartParagraphs() {
+    const allParagraphs = document.querySelectorAll('p');
+    const contentParagraphs = [];
+    
+    for (const p of allParagraphs) {
+      const text = p.textContent.trim();
+      
+      // Must be substantial
+      if (text.length < 40) continue;
+      
+      // Skip if in non-content container
+      if (isInNonContentContainer(p)) continue;
+      
+      // Skip if mostly links
+      const linkText = Array.from(p.querySelectorAll('a'))
+        .reduce((acc, a) => acc + a.textContent.length, 0);
+      if (linkText > text.length * 0.7) continue;
+      
+      // Skip obvious metadata
+      if (isMetadata(text)) continue;
+      
+      contentParagraphs.push(text);
+    }
+    
+    if (contentParagraphs.length > 0) {
+      return { text: contentParagraphs.join('\n\n') };
+    }
+    
+    return { text: '' };
   }
   
   // Extract clean text from an element
   function extractTextFromElement(element) {
     if (!element) return '';
     
-    // Clone to avoid modifying the original
     const clone = element.cloneNode(true);
     
     // Remove unwanted elements
     const unwantedSelectors = [
-      'script', 'style', 'nav', 'aside', 'footer', 'header',
-      '.ad', '.advertisement', '.social-share', '.newsletter',
-      '[class*="ad"]', '[id*="ad"]'
+      'script', 'style', 'iframe', 'nav', 'aside', 'footer', 'header',
+      'form', 'button',
+      '.advertisement', '.ad', '[class*="ad-"]', '[id*="ad-"]',
+      '.social-share', '.share-buttons', '[class*="share"]',
+      '.newsletter', '[class*="newsletter"]',
+      '.related', '[class*="related"]',
+      '.comments', '[class*="comment"]',
+      '[class*="sidebar"]', '[id*="sidebar"]',
+      '[class*="promo"]', '[class*="sponsored"]'
     ];
     
     unwantedSelectors.forEach(selector => {
-      const elements = clone.querySelectorAll(selector);
-      elements.forEach(el => el.remove());
+      try {
+        const elements = clone.querySelectorAll(selector);
+        elements.forEach(el => el.remove());
+      } catch (e) {
+        // Invalid selector, skip
+      }
     });
     
-    return (clone.textContent || clone.innerText || '').trim();
+    // Get paragraphs
+    const paragraphs = clone.querySelectorAll('p');
+    const texts = [];
+    
+    for (const p of paragraphs) {
+      const text = p.textContent.trim();
+      
+      // Filter out metadata and short text
+      if (text.length > 30 && !isMetadata(text)) {
+        texts.push(text);
+      }
+    }
+    
+    return texts.join('\n\n');
   }
   
-  // Calculate confidence score for extracted content
-  function calculateConfidence(text, element) {
-    if (!text || text.length < 50) return 0;
+  // Check if text is metadata/navigation
+  function isMetadata(text) {
+    if (text.length < 10) return true;
     
+    const metadataPatterns = [
+      // Common metadata prefixes
+      /^(By|Published|Updated|Posted|Written by|Author|Share|Subscribe|Sign up|Learn more|Read more)/i,
+      
+      // Image/media captions
+      /^(Credit|Photo|Image|Video|Caption|Listen to):/i,
+      
+      // Engagement metrics
+      /^\d+\s*(comments?|shares?|views?|likes?)$/i,
+      
+      // Navigation
+      /^(Continue reading|Related|Tags?|Topics?|Categories|See more on):/i,
+      
+      // Advertisements
+      /^(Advertisement|Supported by|Skip|Ad|Promoted)/i,
+      
+      // Language options
+      /^(Leer en|Read in|Disponible en)/i,
+      
+      // Author bios (NYTimes style)
+      /is (a|an) .+ (correspondent|reporter|writer|editor|journalist)/i,
+      
+      // Footer content
+      /^(Share full article|Related Content|More on)/i
+    ];
+    
+    return metadataPatterns.some(pattern => pattern.test(text));
+  }
+  
+  // Check if element is in a non-content container
+  function isInNonContentContainer(element) {
+    let parent = element.parentElement;
+    
+    while (parent && parent !== document.body) {
+      if (isNonContentElement(parent)) return true;
+      parent = parent.parentElement;
+    }
+    
+    return false;
+  }
+  
+  // Check if element is clearly non-content
+  function isNonContentElement(element) {
+    const tagName = element.tagName.toLowerCase();
+    const className = (element.className || '').toLowerCase();
+    const id = (element.id || '').toLowerCase();
+    
+    // Skip certain tags
+    if (['script', 'style', 'nav', 'aside', 'footer', 'header', 'form'].includes(tagName)) {
+      return true;
+    }
+    
+    // Skip elements with non-content patterns
+    const nonContentPatterns = [
+      'ad', 'advertisement', 'promo', 'banner', 'popup', 'modal',
+      'newsletter', 'subscription', 'signup', 'social', 'share',
+      'comment', 'reply', 'discussion', 'sidebar', 'widget',
+      'navigation', 'nav', 'menu', 'breadcrumb', 'related',
+      'sponsored', 'partner-content'
+    ];
+    
+    for (const pattern of nonContentPatterns) {
+      if (className.includes(pattern) || id.includes(pattern)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
+  // Score an element for article-likeness
+  function scoreElement(element, text) {
     let score = 0;
     
-    // Length bonus
-    if (text.length > 200) score += 20;
-    if (text.length > 500) score += 30;
+    // Length scoring
+    if (text.length > 500) score += 20;
     if (text.length > 1000) score += 30;
+    if (text.length > 2000) score += 30;
     
-    // Element type bonus
+    // Paragraph count
+    const paragraphs = element.querySelectorAll('p');
+    score += Math.min(paragraphs.length * 5, 50);
+    
+    // Semantic elements
     const tagName = element.tagName.toLowerCase();
-    if (tagName === 'article') score += 40;
-    if (tagName === 'main') score += 30;
-    if (element.getAttribute('role') === 'main') score += 30;
+    if (tagName === 'article') score += 50;
+    if (tagName === 'main') score += 40;
+    if (element.getAttribute('role') === 'main') score += 40;
     
-    // Class name bonus
-    const className = element.className.toLowerCase();
-    if (className.includes('content')) score += 20;
-    if (className.includes('article')) score += 20;
-    if (className.includes('post')) score += 15;
-    if (className.includes('story')) score += 15;
+    // Class/ID indicators
+    const className = (element.className || '').toLowerCase();
+    const id = (element.id || '').toLowerCase();
     
-    return Math.min(score, 100);
+    const positiveIndicators = ['article', 'content', 'post', 'story', 'body', 'text', 'entry'];
+    const negativeIndicators = ['ad', 'sidebar', 'footer', 'header', 'nav', 'menu', 'comment', 'social', 'related'];
+    
+    for (const indicator of positiveIndicators) {
+      if (className.includes(indicator) || id.includes(indicator)) {
+        score += 15;
+      }
+    }
+    
+    for (const indicator of negativeIndicators) {
+      if (className.includes(indicator) || id.includes(indicator)) {
+        score -= 40;
+      }
+    }
+    
+    // Content quality indicators
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 10);
+    score += Math.min(sentences.length * 2, 40);
+    
+    // Journalistic patterns
+    if (/said|according to|reported|announced/i.test(text)) score += 10;
+    
+    return Math.max(0, score);
   }
   
-  // Clean text for Google Sheets compatibility
-  function cleanTextForSheets(text) {
+  // Clean text for output
+  function cleanText(text) {
     if (!text) return '';
     
     return text
-      .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
-      .replace(/[\u201C\u201D]/g, '"')  // Replace smart quotes
-      .replace(/[\u2018\u2019]/g, "'")  // Replace smart apostrophes
-      .replace(/[\u2013\u2014]/g, '-')  // Replace em/en dashes
-      .replace(/[\u2026]/g, '...')      // Replace ellipsis
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')  // Remove control chars
+      // Normalize whitespace
+      .replace(/\s+/g, ' ')
+      
+      // Remove smart quotes and special punctuation
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u2013\u2014]/g, '-')
+      .replace(/[\u2026]/g, '...')
+      
+      // Remove control characters
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+      
+      // Clean up common artifacts
+      .replace(/Advertisement\s*SKIP\s*ADVERTISEMENT/gi, '')
+      .replace(/SKIP\s*ADVERTISEMENT/gi, '')
+      .replace(/Share full article/gi, '')
+      .replace(/Related Content/gi, '')
+      
       .trim();
   }
 })();
