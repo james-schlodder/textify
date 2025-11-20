@@ -46,6 +46,9 @@ document.addEventListener('DOMContentLoaded', function() {
       // Display confidence level
       displayConfidence(data.confidence || 0, data.method || 'Unknown method');
       
+      // Display word count
+      displayWordCount(data.wordCount || 0);
+      
       showStatus('✓ Extraction complete!', 'success');
       
       // Generate text output
@@ -148,6 +151,16 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Clear and append
     messageDiv.appendChild(methodText);
+  }
+  
+  function displayWordCount(count) {
+    const container = document.getElementById('wordCountDisplay');
+    const countSpan = document.getElementById('wordCount');
+    
+    container.style.display = 'block';
+    
+    // Animate the number
+    countSpan.textContent = count.toLocaleString();
   }
   
   function showStatus(message, type) {
