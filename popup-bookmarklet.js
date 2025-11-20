@@ -129,46 +129,4 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Color coding and messaging based on new thresholds
     if (confidence >= 90) {
-      levelDiv.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
-      messageDiv.innerHTML = '✅ <span style="color: #065f46; font-weight: 600;">High confidence - extraction looks accurate</span>';
-      messageDiv.style.color = '#065f46';
-    } else if (confidence >= 50) {
-      levelDiv.style.background = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
-      messageDiv.innerHTML = '⚠️ <span style="color: #92400e; font-weight: 600;">Medium confidence - review recommended</span>';
-      messageDiv.style.color = '#92400e';
-    } else {
-      levelDiv.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
-      messageDiv.innerHTML = '❌ <span style="color: #991b1b; font-weight: 600;">Low confidence - please double-check the results</span>';
-      messageDiv.style.color = '#991b1b';
-    }
-    
-    // Add method info as a tooltip or small text
-    const methodText = document.createElement('div');
-    methodText.style.fontSize = '11px';
-    methodText.style.color = '#64748b';
-    methodText.style.marginTop = '4px';
-    methodText.textContent = 'Method: ' + method;
-    
-    // Clear and append
-    messageDiv.appendChild(methodText);
-  }
-  
-  function displayWordCount(count) {
-    const container = document.getElementById('wordCountDisplay');
-    const countSpan = document.getElementById('wordCount');
-    
-    container.style.display = 'block';
-    
-    // Animate the number
-    countSpan.textContent = count.toLocaleString();
-  }
-  
-  function showStatus(message, type) {
-    status.textContent = message;
-    status.className = 'status ' + type;
-    
-    setTimeout(function() {
-      status.className = 'status';
-    }, 3000);
-  }
-});
+      levelDiv.style.background = 'linear-gradient(135
