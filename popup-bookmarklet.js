@@ -81,17 +81,48 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
     
-    navigator.clipboard.writeText(textContent).then(function() {
-      showStatus('✓ Copied to clipboard!', 'success');
-      
-      // Reset button text after 2 seconds
-      setTimeout(function() {
-        showStatus('Ready', 'success');
-      }, 2000);
-    }).catch(function(err) {
-      showStatus('Failed to copy', 'error');
-      console.error('Copy failed:', err);
-    });
+    // Try modern clipboard API first
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(textContent).then(function() {
+        showStatus('✓ Copied to clipboard!', 'success');
+        
+        setTimeout(function() {
+          showStatus('Ready', 'success');
+        }, 2000);
+      }).catch(function(err) {
+        // Fall back to execCommand if clipboard API fails
+        fallbackCopy();
+      });
+    } else {
+      // Use fallback method directly
+      fallbackCopy();
+    }
+    
+    function fallbackCopy() {
+      try {
+        // Select the textarea content
+        articleTextInput.select();
+        articleTextInput.setSelectionRange(0, 99999); // For mobile devices
+        
+        // Copy the selected text
+        const successful = document.execCommand('copy');
+        
+        if (successful) {
+          showStatus('✓ Copied to clipboard!', 'success');
+          
+          // Deselect after a moment
+          setTimeout(function() {
+            articleTextInput.setSelectionRange(0, 0);
+            showStatus('Ready', 'success');
+          }, 2000);
+        } else {
+          showStatus('Failed to copy', 'error');
+        }
+      } catch (err) {
+        showStatus('Failed to copy', 'error');
+        console.error('Copy failed:', err);
+      }
+    }
   });
   
   function generateText() {
