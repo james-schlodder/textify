@@ -110,50 +110,60 @@
     // Method 1: Try JSON-LD structured data (highest accuracy)
     const result1 = tryJSONLD();
     if (result1.text && result1.text.length > 200) {
+      const cleanedText = cleanText(result1.text);
       return {
-        articleText: cleanText(result1.text),
+        articleText: cleanedText,
         confidence: 95,
-        method: 'JSON-LD structured data'
+        method: 'JSON-LD structured data',
+        wordCount: countWords(cleanedText)
       };
     }
     
     // Method 2: Try site-specific selectors
     const result2 = trySiteSpecificSelectors();
     if (result2.text && result2.text.length > 200) {
+      const cleanedText = cleanText(result2.text);
       return {
-        articleText: cleanText(result2.text),
+        articleText: cleanedText,
         confidence: 90,
-        method: 'Site-specific selectors'
+        method: 'Site-specific selectors',
+        wordCount: countWords(cleanedText)
       };
     }
     
     // Method 3: Try semantic HTML selectors
     const result3 = trySemanticSelectors();
     if (result3.text && result3.text.length > 200) {
+      const cleanedText = cleanText(result3.text);
       return {
-        articleText: cleanText(result3.text),
+        articleText: cleanedText,
         confidence: 85,
-        method: 'Semantic HTML'
+        method: 'Semantic HTML',
+        wordCount: countWords(cleanedText)
       };
     }
     
     // Method 4: Container-based content scoring
     const result4 = tryContainerScoring();
     if (result4.text && result4.text.length > 200) {
+      const cleanedText = cleanText(result4.text);
       return {
-        articleText: cleanText(result4.text),
+        articleText: cleanedText,
         confidence: 75,
-        method: 'Container analysis'
+        method: 'Container analysis',
+        wordCount: countWords(cleanedText)
       };
     }
     
     // Method 5: Smart paragraph extraction
     const result5 = trySmartParagraphs();
     if (result5.text && result5.text.length > 100) {
+      const cleanedText = cleanText(result5.text);
       return {
-        articleText: cleanText(result5.text),
+        articleText: cleanedText,
         confidence: 60,
-        method: 'Paragraph extraction'
+        method: 'Paragraph extraction',
+        wordCount: countWords(cleanedText)
       };
     }
     
@@ -161,7 +171,8 @@
     return {
       articleText: 'Could not extract article text from this page.',
       confidence: 0,
-      method: 'Failed'
+      method: 'Failed',
+      wordCount: 0
     };
   }
   
@@ -622,6 +633,15 @@
     if (/said|according to|reported|announced/i.test(text)) score += 10;
     
     return Math.max(0, score);
+  }
+  
+  // Count words in text
+  function countWords(text) {
+    if (!text) return 0;
+    
+    // Split by whitespace and filter out empty strings
+    const words = text.trim().split(/\s+/).filter(word => word.length > 0);
+    return words.length;
   }
   
   // Clean text for output
