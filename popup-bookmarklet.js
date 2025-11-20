@@ -8,17 +8,19 @@ document.addEventListener('DOMContentLoaded', function() {
   
   const articleTextInput = document.getElementById('articleText');
   
-  // Analytics tracking function
+  // Analytics tracking function with better error handling
   function trackEvent(eventName, parameters = {}) {
     try {
-      if (window.parent && window.parent.gtag) {
-        window.parent.gtag('event', eventName, {
+      // Only try to access gtag if we're not in an iframe or if it's safe
+      if (typeof gtag !== 'undefined') {
+        gtag('event', eventName, {
           event_category: 'Bookmarklet',
           ...parameters
         });
       }
     } catch (error) {
-      console.warn('Analytics tracking failed:', error);
+      // Silently fail - analytics shouldn't break functionality
+      console.debug('Analytics not available:', error.message);
     }
   }
 
@@ -47,9 +49,11 @@ document.addEventListener('DOMContentLoaded', function() {
       displayConfidence(data.confidence || 0, data.method || 'Unknown method');
       
       // Display word count
-      displayWordCount(data.wordCount || 0);
+      if (data.wordCount !== undefined) {
+        displayWordCount(data.wordCount);
+      }
       
-      showStatus('Extraction complete!', 'success');
+      showStatus('✓ Extraction complete!', 'success');
       
       // Generate text output
       generateText();
@@ -69,106 +73,96 @@ document.addEventListener('DOMContentLoaded', function() {
     // Track copy action
     trackEvent('text_copied', {
       text_length: textContent.length,
-      has_content: !!textContent
+      has_content: textContent.length > 0
     });
     
-    // Create a temporary textarea to copy from (works in iframes)
-    const textarea = document.createElement('textarea');
-    textarea.value = textContent;
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.appendChild(textarea);
-    textarea.select();
-    
-    try {
-      const successful = document.execCommand('copy');
-      if (successful) {
-        showStatus('Copied to clipboard!', 'success');
-      } else {
-        showStatus('Failed to copy', 'error');
-      }
-    } catch (err) {
-      showStatus('Failed to copy', 'error');
-      console.error('Copy failed:', err);
-    }
-    
-    document.body.removeChild(textarea);
-  });
-  
-  function generateText() {
-    const articleText = articleTextInput.value.trim();
-    
-    if (!articleText) {
-      output.classList.remove('show');
-      copyBtn.disabled = true;
+    if (!textContent) {
+      showStatus('Nothing to copy!', 'error');
       return;
     }
     
-    // Show the cleaned text in the output area for preview
-    output.textContent = articleText;
-    output.classList.add('show');
-    copyBtn.disabled = false;
+    navigator.clipboard.writeText(textContent).then(function() {
+      showStatus('✓ Copied to clipboard!', 'success');
+      
+      // Reset button text after 2 seconds
+      setTimeout(function() {
+        showStatus('Ready', 'success');
+      }, 2000);
+    }).catch(function(err) {
+      showStatus('Failed to copy', 'error');
+      console.error('Copy failed:', err);
+    });
+  });
+  
+  function generateText() {
+    const text = articleTextInput.value.trim();
+    
+    if (text) {
+      output.textContent = text;
+      output.style.display = 'block';
+    } else {
+      output.style.display = 'none';
+    }
   }
   
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-  
-  function displayConfidence(confidence, method) {
+  function displayConfidence(score, method) {
     const container = document.getElementById('confidenceContainer');
-    const levelDiv = document.getElementById('confidenceLevel');
-    const messageDiv = document.getElementById('confidenceMessage');
+    const bar = document.getElementById('confidenceLevel');
+    const message = document.getElementById('confidenceMessage');
     
     container.style.display = 'block';
     
-    // Update progress bar
-    levelDiv.style.width = confidence + '%';
-    levelDiv.textContent = Math.round(confidence) + '%';
+    // Set bar width and color
+    bar.style.width = score + '%';
     
-    // Color coding and messaging based on new thresholds
-    if (confidence >= 90) {
-      levelDiv.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
-      messageDiv.innerHTML = '<span style="color: #065f46; font-weight: 600;">High confidence - extraction looks accurate</span>';
-      messageDiv.style.color = '#065f46';
-    } else if (confidence >= 50) {
-      levelDiv.style.background = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
-      messageDiv.innerHTML = '<span style="color: #92400e; font-weight: 600;">Medium confidence - review recommended</span>';
-      messageDiv.style.color = '#92400e';
+    // Color coding
+    let color, emoji, text;
+    if (score >= 85) {
+      color = '#10b981'; // green
+      emoji = '✓';
+      text = 'High confidence';
+    } else if (score >= 70) {
+      color = '#f59e0b'; // yellow
+      emoji = '⚠';
+      text = 'Medium confidence';
     } else {
-      levelDiv.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
-      messageDiv.innerHTML = '<span style="color: #991b1b; font-weight: 600;">Low confidence - please double-check the results</span>';
-      messageDiv.style.color = '#991b1b';
+      color = '#ef4444'; // red
+      emoji = '⚠';
+      text = 'Low confidence';
     }
     
-    // Add method info as a tooltip or small text
-    const methodText = document.createElement('div');
-    methodText.style.fontSize = '11px';
-    methodText.style.color = '#64748b';
-    methodText.style.marginTop = '4px';
-    methodText.textContent = 'Method: ' + method;
+    bar.style.background = `linear-gradient(90deg, ${color}, ${color}dd)`;
+    bar.textContent = score + '%';
     
-    // Clear and append
-    messageDiv.appendChild(methodText);
+    message.innerHTML = `
+      <span style="font-size: 16px;">${emoji}</span>
+      <span style="color: #64748b; font-weight: 500;">${text}</span>
+      <span style="color: #94a3b8; font-size: 12px;">• ${method}</span>
+    `;
   }
   
   function displayWordCount(count) {
-    const container = document.getElementById('wordCountDisplay');
-    const countSpan = document.getElementById('wordCount');
+    const wordCountDisplay = document.getElementById('wordCountDisplay');
+    const wordCountSpan = document.getElementById('wordCount');
     
-    container.style.display = 'block';
+    // Check if elements exist before trying to use them
+    if (!wordCountDisplay || !wordCountSpan) {
+      console.warn('Word count display elements not found in HTML');
+      return;
+    }
     
-    // Animate the number
-    countSpan.textContent = count.toLocaleString();
+    wordCountDisplay.style.display = 'block';
+    
+    // Format number with commas
+    wordCountSpan.textContent = count.toLocaleString();
   }
   
   function showStatus(message, type) {
     status.textContent = message;
     status.className = 'status ' + type;
-    
-    setTimeout(function() {
-      status.className = 'status';
-    }, 3000);
+    status.style.display = 'block';
   }
+  
+  // Initialize
+  showStatus('Ready', 'success');
 });
